@@ -2,34 +2,43 @@
 #define WAVEFILE_H
 
 #include <string>
+#include <cstdio>
+#include <cstdlib>
+#include <cstdint>
 // refer to http://blog.csdn.net/maverick1990/article/details/8996608
-using namespace std;
 
 class WaveFile
 {
 public:
+#pragma pack(push, 1)
     struct wavehead {
         char sign[4];                   // "RIFF" sign
-        unsigned int flength;           // File length
+        uint32_t flength;               // File length
         char wavesign[4];               // "WAVE" sign
         char fmtsign[4];                // "fmt" sign
-        unsigned long int unused;       // reserved
-        unsigned short formattype;      // format type
-        unsigned short channelnum;      // channel number, 1:mono 2:stereo
-        unsigned long int samplerate;   // sampling rate
-        unsigned long int transferrate; // tramsfer rate
-        unsigned short int adjustnum;
-        unsigned short int databitnum;
+        uint32_t unused;                // reserved
+        uint16_t formattype;            // format type
+        uint16_t channelnum;            // channel number, 1:mono 2:stereo
+        uint32_t samplerate;            // sampling rate
+        uint32_t transferrate;          // transfer rate
+        uint16_t adjustnum;             // Block align
+        uint16_t databitnum;            // Bits per sample
     } head;
-    unsigned long int datalength;
-    unsigned long int totalsample;
-    unsigned long int bitpersample;
-    unsigned long int datanum;
+#pragma pack(pop)
+    uint32_t datalength;
+    uint32_t totalsample;
+    uint32_t bitpersample;
+    uint32_t datanum;
 
     short *Data;
 
-    WaveFile() {}
-    ~WaveFile() {}
+    WaveFile() : Data(nullptr) {}
+    ~WaveFile() {
+        if (Data) {
+            delete[] Data;
+            Data = nullptr;
+        }
+    }
 
     void WavInfo()
     {
@@ -44,17 +53,22 @@ public:
                head.fmtsign[2], head.fmtsign[3]);
         printf("Format type: %d\n", head.formattype);
         printf("Channel num: %d\n", head.channelnum);
-        printf("Sample rate: %l\n", head.samplerate);
+        printf("Sample rate: %u\n", head.samplerate);
     }
 
-    void WavRead(string filename)
+    bool WavRead(const std::string& filename)
     {
+        if (Data) {
+            delete[] Data;
+            Data = nullptr;
+        }
+
         FILE *fp;
 
         if (NULL == (fp = fopen(filename.c_str(), "rb")))
         {
-            printf("Cannot read wave file");
-            exit(0);
+            printf("Cannot read wave file\n");
+            return false;
         }
 
         fread(&head, sizeof(head), 1, fp);
@@ -93,6 +107,7 @@ public:
         }
 
         fclose(fp);
+        return true;
     }
 };
 

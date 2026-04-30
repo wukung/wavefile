@@ -1,8 +1,7 @@
 #include "widget.h"
 #include "ui_widget.h"
 #include <QPainter>
-#include <qmessagebox.h>
-#include <QTextCodec>
+#include <QMessageBox>
 
 #define MIN(x, y)   ((x) < (y) ? (x) : (y))
 #define MAX(x, y)   ((x) > (y) ? (x) : (y))
@@ -26,7 +25,7 @@ Widget::~Widget()
 
 void Widget::paintEvent(QPaintEvent *e)
 {
-    m_Filename = "/Users/acheng/Downloads/cat_1.wav";
+    m_Filename = "/Users/acheng/workspace/Qt/wavefile/cat.wav";
 
     int W = this->width();
     int H = this->height();
@@ -60,9 +59,12 @@ void Widget::paintEvent(QPaintEvent *e)
     pen.setColor(QColor(0x4B, 0xF3, 0xA7));
     p.setPen(pen);
 
-    m_Wavefile.WavRead(m_Filename.toStdString());
+    m_DrawWave = m_Wavefile.WavRead(m_Filename.toStdString());
+    if (!m_DrawWave) {
+        QMessageBox::warning(this, "Error", "Cannot read wave file: " + m_Filename);
+        return;
+    }
     m_Wavefile.WavInfo();
-    m_DrawWave = true;
 
     if (m_DrawWave) {
         if (m_SamplesPerPixel == 0.0) {
