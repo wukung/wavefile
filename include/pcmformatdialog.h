@@ -17,11 +17,15 @@ public:
 
     WaveFile::RawPcmFormat format() const;
 
+private slots:
+    void onBitDepthChanged(int index);
+
 private:
     QComboBox *m_sampleRateBox;
     QComboBox *m_bitDepthBox;
     QComboBox *m_channelsBox;
     QComboBox *m_endianBox;
+    QComboBox *m_encodingBox;
 };
 
 #endif // PCMFORMATDIALOG_H

@@ -5,6 +5,8 @@
 #include <QVBoxLayout>
 #include <QDialogButtonBox>
 
+using Encoding = WaveFile::RawPcmFormat::Encoding;
+
 PcmFormatDialog::PcmFormatDialog(QWidget *parent)
     : QDialog(parent)
 {
@@ -28,9 +30,20 @@ PcmFormatDialog::PcmFormatDialog(QWidget *parent)
     m_endianBox->addItem(tr("Little-endian"), true);
     m_endianBox->addItem(tr("Big-endian"),    false);
 
+    m_encodingBox = new QComboBox(this);
+    m_encodingBox->addItem(tr("Linear PCM"), static_cast<int>(Encoding::Linear));
+    m_encodingBox->addItem(tr("A-law (G.711)"),  static_cast<int>(Encoding::ALaw));
+    m_encodingBox->addItem(tr("μ-law (G.711)"),  static_cast<int>(Encoding::ULaw));
+    // A/μ-law only apply to 8-bit; disable when 16-bit is selected
+    m_encodingBox->setEnabled(m_bitDepthBox->currentIndex() == 0);
+
+    connect(m_bitDepthBox, &QComboBox::currentIndexChanged,
+            this, &PcmFormatDialog::onBitDepthChanged);
+
     auto *formLayout = new QFormLayout;
     formLayout->addRow(tr("Sample Rate:"),  m_sampleRateBox);
     formLayout->addRow(tr("Bit Depth:"),    m_bitDepthBox);
+    formLayout->addRow(tr("Encoding:"),     m_encodingBox);
     formLayout->addRow(tr("Channels:"),     m_channelsBox);
     formLayout->addRow(tr("Byte Order:"),   m_endianBox);
 
@@ -45,6 +58,14 @@ PcmFormatDialog::PcmFormatDialog(QWidget *parent)
     setLayout(mainLayout);
 }
 
+void PcmFormatDialog::onBitDepthChanged(int index)
+{
+    bool is8bit = (m_bitDepthBox->itemData(index).toInt() == 8);
+    m_encodingBox->setEnabled(is8bit);
+    if (!is8bit)
+        m_encodingBox->setCurrentIndex(0); // reset to Linear
+}
+
 WaveFile::RawPcmFormat PcmFormatDialog::format() const
 {
     WaveFile::RawPcmFormat fmt;
@@ -52,5 +73,6 @@ WaveFile::RawPcmFormat PcmFormatDialog::format() const
     fmt.bitsPerSample = static_cast<uint16_t>(m_bitDepthBox->currentData().toInt());
     fmt.channels      = static_cast<uint16_t>(m_channelsBox->currentData().toInt());
     fmt.littleEndian  = m_endianBox->currentData().toBool();
+    fmt.encoding      = static_cast<Encoding>(m_encodingBox->currentData().toInt());
     return fmt;
 }

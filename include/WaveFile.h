@@ -145,6 +145,12 @@ public:
             fclose(fp);
             return false;
         }
+        // formattype: 1=PCM, 6=A-law, 7=μ-law
+        if (head.formattype != 1 && head.formattype != 6 && head.formattype != 7) {
+            printf("Unsupported WAV format type: %d\n", head.formattype);
+            fclose(fp);
+            return false;
+        }
 
         Data = new short[datanum + 10];
         if (16 == head.databitnum) {
@@ -156,19 +162,18 @@ public:
                 }
             }
         }
-        else {
+        else { // 8-bit: PCM unsigned, A-law (6), or μ-law (7)
             for (unsigned long i=0; !feof(fp) && i<datanum; i++) {
-                short low, high;
-
-                fread(&low, 1, 1, fp);
-                if (2 == head.channelnum) {
+                uint8_t val = 0;
+                if (fread(&val, 1, 1, fp) != 1) break;
+                if (head.formattype == 6)
+                    Data[i] = alaw2linear(val);
+                else if (head.formattype == 7)
+                    Data[i] = ulaw2linear(val);
+                else
+                    Data[i] = static_cast<short>((static_cast<int>(val) - 128) * 256);
+                if (2 == head.channelnum)
                     fseek(fp, 1, SEEK_CUR);
-                }
-                fread(&high, 1, 1, fp);
-                if (2 == head.channelnum) {
-                    fseek(fp, 1, SEEK_CUR);
-                }
-                Data[i] = (low & 0x00ff) | (high << 8 & 0xff00);
             }
         }
 
@@ -177,11 +182,36 @@ public:
     }
 
     struct RawPcmFormat {
+        enum class Encoding { Linear, ALaw, ULaw };
         uint32_t sampleRate;
         uint16_t bitsPerSample; // 8 or 16
         uint16_t channels;      // 1 or 2
         bool     littleEndian;
+        Encoding encoding = Encoding::Linear;
     };
+
+    // ITU-T G.711 μ-law decode
+    static short ulaw2linear(uint8_t u) {
+        u = ~u;
+        int sign     = (u & 0x80) ? -1 : 1;
+        int exponent = (u >> 4) & 0x07;
+        int mantissa = u & 0x0F;
+        int sample   = ((mantissa | 0x10) << (exponent + 3)) - 132;
+        return static_cast<short>(sign * sample);
+    }
+
+    // ITU-T G.711 A-law decode
+    static short alaw2linear(uint8_t a) {
+        a ^= 0x55;
+        int sign     = (a & 0x80) ? 1 : -1;
+        int mag      = a & 0x7F;
+        int exponent = mag >> 4;
+        int mantissa = mag & 0x0F;
+        int sample   = (exponent == 0)
+            ? (mantissa << 1) | 1
+            : ((0x10 | mantissa) << exponent) | (1 << (exponent - 1));
+        return static_cast<short>(sign * (sample << 3));
+    }
 
     bool RawRead(const std::string& filename, const RawPcmFormat& fmt)
     {
@@ -230,10 +260,16 @@ public:
             for (uint32_t i = 0; !feof(fp) && i < datanum; i++) {
                 uint8_t val = 0;
                 if (fread(&val, 1, 1, fp) != 1) break;
-                // 8-bit PCM is unsigned; convert to signed 16-bit range
-                Data[i] = static_cast<short>((static_cast<int>(val) - 128) * 256);
+                switch (fmt.encoding) {
+                    case RawPcmFormat::Encoding::ALaw:
+                        Data[i] = alaw2linear(val); break;
+                    case RawPcmFormat::Encoding::ULaw:
+                        Data[i] = ulaw2linear(val); break;
+                    default: // Linear unsigned 8-bit
+                        Data[i] = static_cast<short>((static_cast<int>(val) - 128) * 256);
+                }
                 if (fmt.channels == 2)
-                    fseek(fp, 1, SEEK_CUR); // skip second channel
+                    fseek(fp, 1, SEEK_CUR);
             }
         } else { // 16-bit
             for (uint32_t i = 0; !feof(fp) && i < datanum; i++) {
