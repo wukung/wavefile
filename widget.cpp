@@ -1,6 +1,7 @@
 #include "widget.h"
 #include "ui_widget.h"
 #include <QPainter>
+#include <QPainterPath>
 #include <QMessageBox>
 
 #define MIN(x, y)   ((x) < (y) ? (x) : (y))
@@ -97,44 +98,34 @@ void Widget::Draw16Bit(QPainter &p, int W, int H)
 
     maxSampleToShow = MIN(maxSampleToShow, m_Wavefile.datanum);
 
-    while (index < maxSampleToShow) {
-        short maxValue = -32767;
-        short minValue = 32767;
+    p.setRenderHint(QPainter::Antialiasing);
+    QPainterPath path;
+    bool first = true;
 
-        // find the max & min peaks for this pixel
-        for (int x=0; x<m_SamplesPerPixel; x++) {
-            maxValue = MAX(maxValue, m_Wavefile.Data[x+index]);
-            minValue = MIN(minValue, m_Wavefile.Data[x+index]);
-        }
+    while (index < maxSampleToShow && i < W) {
+        // Retrieve the sampled value
+        short sampleVal = m_Wavefile.Data[index];
 
         // scales based on height of windows
-        int scaledMinVal = (int)(((minValue + 32768)*H)/65536);
-        int scaledMaxVal = (int)(((maxValue + 32768)*H)/65536);
+        int scaledVal = (int)(((sampleVal + 32768) * H) / 65536);
+        scaledVal = H - scaledVal;
 
-        scaledMinVal = H - scaledMinVal;
-        scaledMaxVal = H - scaledMaxVal;
-
-        // if samples per pixel is small or less than zero,
-        // we are out of zoom range, so don't display anything
         if (m_SamplesPerPixel > 0.0000000001) {
-            if (scaledMinVal == scaledMaxVal) {
-                if (prevY != 0) {
-                    p.drawLine(prevX, prevY, i, scaledMaxVal);
-                }
-            }
-            else {
-                p.drawLine(i, scaledMinVal, i, scaledMaxVal);
+            if (first) {
+                path.moveTo(i, scaledVal);
+                first = false;
+            } else {
+                path.lineTo(i, scaledVal);
             }
         }
         else {
             return;
         }
-        prevX = i;
-        prevY = scaledMaxVal;
 
         i++;
         index = (int)(i * m_SamplesPerPixel) + m_OffsetInSamples;
     }
+    p.drawPath(path);
 }
 
 void Widget::Draw8Bit(QPainter &p, int W, int H)
@@ -149,39 +140,32 @@ void Widget::Draw8Bit(QPainter &p, int W, int H)
 
     maxSampleToShow = MIN(maxSampleToShow, m_Wavefile.datanum);
 
-    while (index < maxSampleToShow) {
-        short maxVal = 0;
-        short minVal = 255;
+    p.setRenderHint(QPainter::Antialiasing);
+    QPainterPath path;
+    bool first = true;
 
-        for (int x=0; x<m_SamplesPerPixel; x++) {
-            short low = (short) (m_Wavefile.Data[x+index] & 0x00ff);
-            short high = (short) (m_Wavefile.Data[x+index] >> 8 & 0x00ff);
-            maxVal = MAX(maxVal, low);
-            maxVal = MAX(maxVal, high);
-            minVal = MIN(minVal, low);
-            minVal = MIN(minVal, high);
-        }
+    while (index < maxSampleToShow && i < W) {
+        short low = (short)(m_Wavefile.Data[index] & 0x00ff);
+        short high = (short)((m_Wavefile.Data[index] >> 8) & 0x00ff);
+        // Take the max or just the low byte for 8-bit mono
+        short sampleVal = MAX(low, high);
 
-        int scaledMinVal = H - (int)(((minVal) * H) / 256);
-        int scaledMaxVal = H - (int)(((maxVal) * H) / 256);
+        int scaledVal = H - (int)((sampleVal * H) / 256);
 
         if (m_SamplesPerPixel > 0.0000000001) {
-            if (scaledMaxVal == scaledMinVal) {
-                if (prevY != 0) {
-                    p.drawLine(prevX, prevY, i, scaledMaxVal);
-                }
-            }
-            else {
-                p.drawLine(i, scaledMinVal, i, scaledMaxVal);
+            if (first) {
+                path.moveTo(i, scaledVal);
+                first = false;
+            } else {
+                path.lineTo(i, scaledVal);
             }
         }
         else {
             return;
         }
-        prevX = i;
-        prevY = scaledMaxVal;
 
         i++;
         index = (int)(i * m_SamplesPerPixel) + m_OffsetInSamples;
     }
+    p.drawPath(path);
 }
