@@ -24,7 +24,7 @@ cmake --build build
 
 ## Usage
 
-Run the executable and press **Ctrl+O** to open a WAV file.  
+Run the executable and press **Ctrl+O** to open a WAV file.
 Only 8-bit and 16-bit PCM WAV files are supported.
 
 ## Project Structure
