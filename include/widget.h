@@ -25,8 +25,7 @@ private slots:
 private:
     Ui::Widget *ui;
 
-    void Draw16Bit(QPainter &p, int W, int H);
-    void Draw8Bit(QPainter &p, int W, int H);
+    void DrawWaveform(QPainter &p, int W, int H);
 
     // Necessary variables for wave form
     WaveFile m_Wavefile;

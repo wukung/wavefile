@@ -6,6 +6,7 @@
 #include <QFileDialog>
 #include <QKeyEvent>
 #include <algorithm>
+#include <cmath>
 
 Widget::Widget(QWidget *parent) :
     QWidget(parent),
@@ -106,95 +107,73 @@ void Widget::paintEvent(QPaintEvent *e)
     // Dynamically calculate mapping of pixel and sampling to perfectly fill the window
     m_SamplesPerPixel = (double)m_Wavefile.datanum / W;
 
-    p.drawLine(0, H/2, W, H/2);
+    if (m_Wavefile.datanum > 0) {
+        DrawWaveform(p, W, H);
+    }
 
-    if (m_Wavefile.bitpersample == 16) {
-        Draw16Bit(p, W, H);
-    }
-    else if (m_Wavefile.bitpersample == 8) {
-        Draw8Bit(p, W, H);
-    }
+    // Draw center line on top of waveform
+    p.setPen(QPen(QColor(0x00, 0x60, 0x40)));
+    p.drawLine(0, H/2, W, H/2);
 
     QPainter painter(this);
     painter.drawPixmap(0, 0, pix);
 }
 
-void Widget::Draw16Bit(QPainter &p, int W, int H)
+void Widget::DrawWaveform(QPainter &p, int W, int H)
 {
-    int i = 0;
+    if (m_SamplesPerPixel <= 0.0)
+        return;
 
-    // index is how far to offset into the data array
-    int index = m_OffsetInSamples;
-    int maxSampleToShow = (int) ((m_SamplesPerPixel * W) + m_OffsetInSamples);
+    const int datanum = static_cast<int>(m_Wavefile.datanum);
 
-    maxSampleToShow = std::min(maxSampleToShow, (int)m_Wavefile.datanum);
+    // CoolEdit-style colours
+    // Outer envelope (min/max range): medium green
+    const QColor outerColor(0x27, 0x7A, 0x5C);
+    // Inner RMS band: bright teal
+    const QColor rmsColor(0x4B, 0xF3, 0xA7);
 
-    p.setRenderHint(QPainter::Antialiasing);
-    QPainterPath path;
-    bool first = true;
+    // Helper: map a signed 16-bit sample to screen Y (0 = top, H = bottom)
+    auto scaleY = [&](int sample) -> int {
+        return H - static_cast<int>(((static_cast<long long>(sample) + 32768LL) * H) / 65536LL);
+    };
 
-    while (index < maxSampleToShow && i < W) {
-        // Retrieve the sampled value
-        short sampleVal = m_Wavefile.Data[index];
+    for (int x = 0; x < W; x++) {
+        int startIdx = static_cast<int>(x * m_SamplesPerPixel) + m_OffsetInSamples;
+        int endIdx   = static_cast<int>((x + 1) * m_SamplesPerPixel) + m_OffsetInSamples;
+        if (endIdx <= startIdx) endIdx = startIdx + 1;
+        endIdx = std::min(endIdx, datanum);
+        if (startIdx >= datanum) break;
 
-        // scales based on height of windows
-        int scaledVal = (int)(((sampleVal + 32768) * H) / 65536);
-        scaledVal = H - scaledVal;
+        short minVal = m_Wavefile.Data[startIdx];
+        short maxVal = minVal;
+        double sumSq = 0.0;
 
-        if (m_SamplesPerPixel > 0.0000000001) {
-            if (first) {
-                path.moveTo(i, scaledVal);
-                first = false;
-            } else {
-                path.lineTo(i, scaledVal);
-            }
+        for (int s = startIdx; s < endIdx; s++) {
+            short v = m_Wavefile.Data[s];
+            if (v < minVal) minVal = v;
+            if (v > maxVal) maxVal = v;
+            sumSq += static_cast<double>(v) * v;
         }
-        else {
-            return;
-        }
 
-        i++;
-        index = (int)(i * m_SamplesPerPixel) + m_OffsetInSamples;
+        int count = endIdx - startIdx;
+        double rms = (count > 0) ? std::sqrt(sumSq / count) : 0.0;
+
+        // Screen coordinates for outer envelope
+        int yTop = scaleY(maxVal); // max sample → highest point (smallest Y)
+        int yBot = scaleY(minVal); // min sample → lowest point (largest Y)
+        if (yTop > yBot) std::swap(yTop, yBot);
+
+        // Draw outer envelope
+        p.setPen(QPen(outerColor));
+        p.drawLine(x, yTop, x, yBot);
+
+        // Draw inner RMS band (clamped to the envelope)
+        int rmsPixels = static_cast<int>(rms * H / 65536.0);
+        int yRmsTop   = std::max(H / 2 - rmsPixels, yTop);
+        int yRmsBot   = std::min(H / 2 + rmsPixels, yBot);
+        if (yRmsTop <= yRmsBot) {
+            p.setPen(QPen(rmsColor));
+            p.drawLine(x, yRmsTop, x, yRmsBot);
+        }
     }
-    p.drawPath(path);
-}
-
-void Widget::Draw8Bit(QPainter &p, int W, int H)
-{
-    int i = 0;
-
-    // index is how far to offset into the data array
-    int index = m_OffsetInSamples;
-    int maxSampleToShow = (int) ((m_SamplesPerPixel * W) + m_OffsetInSamples);
-
-    maxSampleToShow = std::min(maxSampleToShow, (int)m_Wavefile.datanum);
-
-    p.setRenderHint(QPainter::Antialiasing);
-    QPainterPath path;
-    bool first = true;
-
-    while (index < maxSampleToShow && i < W) {
-        short low = (short)(m_Wavefile.Data[index] & 0x00ff);
-        short high = (short)((m_Wavefile.Data[index] >> 8) & 0x00ff);
-        // Take the max or just the low byte for 8-bit mono
-        short sampleVal = std::max(low, high);
-
-        int scaledVal = H - (int)((sampleVal * H) / 256);
-
-        if (m_SamplesPerPixel > 0.0000000001) {
-            if (first) {
-                path.moveTo(i, scaledVal);
-                first = false;
-            } else {
-                path.lineTo(i, scaledVal);
-            }
-        }
-        else {
-            return;
-        }
-
-        i++;
-        index = (int)(i * m_SamplesPerPixel) + m_OffsetInSamples;
-    }
-    p.drawPath(path);
 }
