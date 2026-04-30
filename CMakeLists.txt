@@ -16,8 +16,10 @@ add_executable(wavefile
     src/main.cpp
     src/widget.cpp
     src/widget.ui
+    src/pcmformatdialog.cpp
     include/widget.h
     include/WaveFile.h
+    include/pcmformatdialog.h
 )
 
 target_include_directories(wavefile PRIVATE include)

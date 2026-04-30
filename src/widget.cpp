@@ -1,5 +1,6 @@
 #include "widget.h"
 #include "ui_widget.h"
+#include "pcmformatdialog.h"
 #include <QPainter>
 #include <QPainterPath>
 #include <QFileDialog>
@@ -26,11 +27,19 @@ Widget::~Widget()
 void Widget::openFile()
 {
     QString filename = QFileDialog::getOpenFileName(
-        this, tr("Open WAV File"), QString(), tr("WAV Files (*.wav);;All Files (*)"));
+        this, tr("Open Audio File"), QString(),
+        tr("WAV Files (*.wav);;Raw PCM Files (*.raw *.pcm *.bin);;All Files (*)"));
     if (filename.isEmpty())
         return;
     m_Filename = filename;
     m_DrawWave = m_Wavefile.WavRead(m_Filename.toStdString());
+    if (!m_DrawWave) {
+        // WAV parse failed — ask user for raw PCM format
+        PcmFormatDialog dlg(this);
+        if (dlg.exec() == QDialog::Accepted) {
+            m_DrawWave = m_Wavefile.RawRead(m_Filename.toStdString(), dlg.format());
+        }
+    }
     if (m_DrawWave) {
         m_Wavefile.WavInfo();
     }

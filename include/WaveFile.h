@@ -175,6 +175,83 @@ public:
         fclose(fp);
         return true;
     }
+
+    struct RawPcmFormat {
+        uint32_t sampleRate;
+        uint16_t bitsPerSample; // 8 or 16
+        uint16_t channels;      // 1 or 2
+        bool     littleEndian;
+    };
+
+    bool RawRead(const std::string& filename, const RawPcmFormat& fmt)
+    {
+        if (fmt.bitsPerSample != 8 && fmt.bitsPerSample != 16) {
+            printf("Unsupported bit depth: %d-bit.\n", fmt.bitsPerSample);
+            return false;
+        }
+
+        FILE *fp = fopen(filename.c_str(), "rb");
+        if (!fp) {
+            printf("Cannot open file: %s\n", filename.c_str());
+            return false;
+        }
+
+        // Determine file size
+        fseek(fp, 0, SEEK_END);
+        long fileSize = ftell(fp);
+        fseek(fp, 0, SEEK_SET);
+
+        if (fileSize <= 0) {
+            fclose(fp);
+            return false;
+        }
+
+        // Populate a synthetic header so the rest of the code can work uniformly
+        uint16_t blockAlign = static_cast<uint16_t>((fmt.bitsPerSample / 8) * fmt.channels);
+        head.formattype  = 1; // PCM
+        head.channelnum  = fmt.channels;
+        head.samplerate  = fmt.sampleRate;
+        head.databitnum  = fmt.bitsPerSample;
+        head.adjustnum   = blockAlign;
+        head.transferrate = fmt.sampleRate * blockAlign;
+
+        datalength   = static_cast<uint32_t>(fileSize);
+        bitpersample = fmt.bitsPerSample / fmt.channels;
+        totalsample  = datalength / blockAlign;
+        datanum      = totalsample; // one decoded value per sample (first channel)
+
+        if (Data) {
+            delete[] Data;
+            Data = nullptr;
+        }
+        Data = new short[datanum + 10];
+
+        if (fmt.bitsPerSample == 8) {
+            for (uint32_t i = 0; !feof(fp) && i < datanum; i++) {
+                uint8_t val = 0;
+                if (fread(&val, 1, 1, fp) != 1) break;
+                // 8-bit PCM is unsigned; convert to signed 16-bit range
+                Data[i] = static_cast<short>((static_cast<int>(val) - 128) * 256);
+                if (fmt.channels == 2)
+                    fseek(fp, 1, SEEK_CUR); // skip second channel
+            }
+        } else { // 16-bit
+            for (uint32_t i = 0; !feof(fp) && i < datanum; i++) {
+                uint8_t lo = 0, hi = 0;
+                if (fread(&lo, 1, 1, fp) != 1) break;
+                if (fread(&hi, 1, 1, fp) != 1) break;
+                if (fmt.littleEndian)
+                    Data[i] = static_cast<short>((hi << 8) | lo);
+                else
+                    Data[i] = static_cast<short>((lo << 8) | hi);
+                if (fmt.channels == 2)
+                    fseek(fp, 2, SEEK_CUR); // skip second channel
+            }
+        }
+
+        fclose(fp);
+        return true;
+    }
 };
 
 #endif // WAVEFILE_H

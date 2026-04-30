@@ -1,0 +1,56 @@
+#include "pcmformatdialog.h"
+#include <QComboBox>
+#include <QLabel>
+#include <QFormLayout>
+#include <QVBoxLayout>
+#include <QDialogButtonBox>
+
+PcmFormatDialog::PcmFormatDialog(QWidget *parent)
+    : QDialog(parent)
+{
+    setWindowTitle(tr("Raw PCM Format"));
+
+    m_sampleRateBox = new QComboBox(this);
+    for (int rate : {8000, 11025, 16000, 22050, 44100, 48000, 96000})
+        m_sampleRateBox->addItem(QString::number(rate) + " Hz", rate);
+    m_sampleRateBox->setCurrentIndex(4); // 44100 as default
+
+    m_bitDepthBox = new QComboBox(this);
+    m_bitDepthBox->addItem("8-bit",  8);
+    m_bitDepthBox->addItem("16-bit", 16);
+    m_bitDepthBox->setCurrentIndex(1); // 16-bit as default
+
+    m_channelsBox = new QComboBox(this);
+    m_channelsBox->addItem(tr("Mono"),   1);
+    m_channelsBox->addItem(tr("Stereo"), 2);
+
+    m_endianBox = new QComboBox(this);
+    m_endianBox->addItem(tr("Little-endian"), true);
+    m_endianBox->addItem(tr("Big-endian"),    false);
+
+    auto *formLayout = new QFormLayout;
+    formLayout->addRow(tr("Sample Rate:"),  m_sampleRateBox);
+    formLayout->addRow(tr("Bit Depth:"),    m_bitDepthBox);
+    formLayout->addRow(tr("Channels:"),     m_channelsBox);
+    formLayout->addRow(tr("Byte Order:"),   m_endianBox);
+
+    auto *buttons = new QDialogButtonBox(
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
+    connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+
+    auto *mainLayout = new QVBoxLayout(this);
+    mainLayout->addLayout(formLayout);
+    mainLayout->addWidget(buttons);
+    setLayout(mainLayout);
+}
+
+WaveFile::RawPcmFormat PcmFormatDialog::format() const
+{
+    WaveFile::RawPcmFormat fmt;
+    fmt.sampleRate    = m_sampleRateBox->currentData().toUInt();
+    fmt.bitsPerSample = static_cast<uint16_t>(m_bitDepthBox->currentData().toInt());
+    fmt.channels      = static_cast<uint16_t>(m_channelsBox->currentData().toInt());
+    fmt.littleEndian  = m_endianBox->currentData().toBool();
+    return fmt;
+}
