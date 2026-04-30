@@ -16,7 +16,11 @@ class Widget : public QWidget
 public:
     explicit Widget(QWidget *parent = nullptr);
     ~Widget();
-    void paintEvent(QPaintEvent *);
+    void paintEvent(QPaintEvent *) override;
+    void keyPressEvent(QKeyEvent *event) override;
+
+private slots:
+    void openFile();
 
 private:
     Ui::Widget *ui;
