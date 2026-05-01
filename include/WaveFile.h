@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <cstdint>
 // refer to http://blog.csdn.net/maverick1990/article/details/8996608
 
@@ -71,18 +72,18 @@ public:
 
     void WavInfo()
     {
-        printf("sign: %c%c%c%c\n",
-               head.sign[0], head.sign[1], head.sign[2], head.sign[3]);
-        printf("File length: %u\n", head.flength);
-        printf("wave sign: %c%c%c%c\n",
-               head.wavesign[0], head.wavesign[1],
-               head.wavesign[2], head.wavesign[3]);
-        printf("FMT sign:%c%c%c%c\n",
-               head.fmtsign[0], head.fmtsign[1],
-               head.fmtsign[2], head.fmtsign[3]);
-        printf("Format type: %d\n", head.formattype);
-        printf("Channel num: %d\n", head.channelnum);
-        printf("Sample rate: %u\n", head.samplerate);
+        printf("--- Audio Info ---\n");
+        printf("Type:        %.4s / %.4s\n", head.sign, head.wavesign);
+        printf("Format type: %d%s\n", head.formattype,
+               head.formattype == 6 ? " (A-law)" :
+               head.formattype == 7 ? " (μ-law)" : " (PCM)");
+        printf("Channels:    %d (%s)\n", head.channelnum,
+               head.channelnum == 1 ? "mono" : "stereo");
+        printf("Sample rate: %u Hz\n", head.samplerate);
+        printf("Bit depth:   %u-bit\n", head.databitnum);
+        printf("Data length: %u bytes\n", datalength);
+        printf("Samples:     %u\n", datanum);
+        printf("------------------\n");
     }
 
     bool WavRead(const std::string& filename)
@@ -237,6 +238,11 @@ public:
         }
 
         // Populate a synthetic header so the rest of the code can work uniformly
+        // Zero out the entire struct first to clear any residue from a failed WavRead()
+        head = {};
+        std::memcpy(head.sign,     "RAW ", 4);
+        std::memcpy(head.wavesign, "PCM ", 4);
+        std::memcpy(head.fmtsign,  "fmt ", 4);
         uint16_t blockAlign = static_cast<uint16_t>((fmt.bitsPerSample / 8) * fmt.channels);
         head.formattype  = 1; // PCM
         head.channelnum  = fmt.channels;
