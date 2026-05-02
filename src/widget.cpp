@@ -15,7 +15,6 @@ Widget::Widget(QWidget *parent) :
     ui->setupUi(this);
 
     m_DrawWave = false;
-    m_ZoomFactor = 1.0;
     m_SamplesPerPixel = 0.0;
     m_OffsetInSamples = 0;
 }
@@ -56,7 +55,7 @@ void Widget::keyPressEvent(QKeyEvent *event)
     }
 }
 
-void Widget::paintEvent(QPaintEvent *e)
+void Widget::paintEvent(QPaintEvent *)
 {
     int W = this->width();
     int H = this->height();

@@ -32,7 +32,6 @@ private:
     bool m_DrawWave;
     QString m_Filename;
     double m_SamplesPerPixel;
-    double m_ZoomFactor;
     int m_OffsetInSamples;
 };
 

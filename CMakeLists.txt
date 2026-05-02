@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.16)
 
 project(wavefile VERSION 1.0 LANGUAGES CXX)
 
+include(CTest)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -29,3 +31,7 @@ target_link_libraries(wavefile PRIVATE
     Qt6::Gui
     Qt6::Widgets
 )
+
+if(BUILD_TESTING)
+    add_subdirectory(tests)
+endif()

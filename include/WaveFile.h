@@ -27,9 +27,13 @@ public:
         uint16_t databitnum;            // Bits per sample
     } head;
 #pragma pack(pop)
+    /** Bytes of PCM represented by the decoded buffer (after load: `datanum * blockAlign`). */
     uint32_t datalength;
+    /** Same as `datanum` after a successful read: number of sample frames decoded for channel 0. */
     uint32_t totalsample;
+    /** Bits per sample per channel (from WAV `wBitsPerSample` or raw format). */
     uint32_t bitpersample;
+    /** Number of `short` samples in `Data`: one per frame, first channel only — equals frame count. */
     uint32_t datanum;
 
     short *Data;
@@ -48,8 +52,8 @@ public:
           bitpersample(other.bitpersample), datanum(other.datanum), Data(nullptr)
     {
         if (other.Data && other.datanum > 0) {
-            Data = new short[datanum + 10];
-            std::copy(other.Data, other.Data + datanum + 10, Data);
+            Data = new short[datanum];
+            std::copy(other.Data, other.Data + datanum, Data);
         }
     }
 
@@ -63,8 +67,8 @@ public:
             bitpersample = other.bitpersample;
             datanum = other.datanum;
             if (other.Data && other.datanum > 0) {
-                Data = new short[datanum + 10];
-                std::copy(other.Data, other.Data + datanum + 10, Data);
+                Data = new short[datanum];
+                std::copy(other.Data, other.Data + datanum, Data);
             }
         }
         return *this;
@@ -78,7 +82,8 @@ public:
                head.formattype == 6 ? " (A-law)" :
                head.formattype == 7 ? " (μ-law)" : " (PCM)");
         printf("Channels:    %d (%s)\n", head.channelnum,
-               head.channelnum == 1 ? "mono" : "stereo");
+               head.channelnum == 1 ? "mono" :
+               head.channelnum == 2 ? "stereo" : "multi-channel");
         printf("Sample rate: %u Hz\n", head.samplerate);
         printf("Bit depth:   %u-bit\n", head.databitnum);
         printf("Data length: %u bytes\n", datalength);
@@ -92,6 +97,10 @@ public:
             delete[] Data;
             Data = nullptr;
         }
+        datalength = 0;
+        totalsample = 0;
+        datanum = 0;
+        bitpersample = 0;
 
         FILE *fp;
 
@@ -136,49 +145,134 @@ public:
             return false;
         }
 
+        if (head.adjustnum == 0) {
+            printf("Invalid WAV: block align is zero\n");
+            fclose(fp);
+            return false;
+        }
+
         totalsample = datalength / head.adjustnum;
-        bitpersample = head.databitnum / head.channelnum;
-        datanum = totalsample * bitpersample / 16;
+        // bitsPerSample in WAV is per channel; we decode one sample (first channel) per frame
+        bitpersample = head.databitnum;
+        const uint32_t expectedFrames = totalsample;
 
         if (head.databitnum != 8 && head.databitnum != 16) {
             printf("Unsupported bit depth: %d-bit. Only 8-bit and 16-bit PCM are supported.\n",
                    head.databitnum);
+            datalength = 0;
+            totalsample = 0;
+            bitpersample = 0;
             fclose(fp);
             return false;
         }
         // formattype: 1=PCM, 6=A-law, 7=μ-law
         if (head.formattype != 1 && head.formattype != 6 && head.formattype != 7) {
             printf("Unsupported WAV format type: %d\n", head.formattype);
+            datalength = 0;
+            totalsample = 0;
+            bitpersample = 0;
             fclose(fp);
             return false;
         }
 
-        Data = new short[datanum + 10];
+        const unsigned bytesPerChannel = head.databitnum / 8;
+        if (bytesPerChannel == 0 || head.databitnum % 8 != 0) {
+            printf("Invalid WAV: bits per sample must be a multiple of 8\n");
+            datalength = 0;
+            totalsample = 0;
+            bitpersample = 0;
+            fclose(fp);
+            return false;
+        }
+        const long skipRestOfFrame =
+            (head.channelnum > 1)
+                ? (long)head.adjustnum - (long)bytesPerChannel
+                : 0;
+        if (skipRestOfFrame < 0) {
+            printf("Invalid WAV: block align smaller than one channel sample\n");
+            datalength = 0;
+            totalsample = 0;
+            bitpersample = 0;
+            fclose(fp);
+            return false;
+        }
+        if (head.channelnum > 1 && skipRestOfFrame == 0) {
+            printf("Invalid WAV: multi-channel yet block align matches single channel\n");
+            datalength = 0;
+            totalsample = 0;
+            bitpersample = 0;
+            fclose(fp);
+            return false;
+        }
+
+        Data = new short[expectedFrames];
+        uint32_t n = 0;
+
         if (16 == head.databitnum) {
-            for (unsigned long i=0; !feof(fp) && i<datanum; i++) {
-                fread(&Data[i], 2, 1, fp);
-                // Skip 2nd channel for stereo
-                if (2 == head.channelnum) {
-                    fseek(fp, 2, SEEK_CUR);
+            // WAV PCM sample data is little-endian per spec (regardless of host endianness)
+            for (; n < expectedFrames; ) {
+                uint8_t byte0 = 0, byte1 = 0; // LE: byte0 = LSB, byte1 = MSB
+                if (fread(&byte0, 1, 1, fp) != 1)
+                    break;
+                if (fread(&byte1, 1, 1, fp) != 1)
+                    break;
+                const short sample = pcm16le(byte0, byte1);
+                if (head.channelnum > 1) {
+                    if (skipRestOfFrame > 0 && fseek(fp, skipRestOfFrame, SEEK_CUR) != 0)
+                        break;
                 }
+                Data[n++] = sample;
             }
         }
         else { // 8-bit: PCM unsigned, A-law (6), or μ-law (7)
-            for (unsigned long i=0; !feof(fp) && i<datanum; i++) {
+            for (; n < expectedFrames; ) {
                 uint8_t val = 0;
-                if (fread(&val, 1, 1, fp) != 1) break;
+                if (fread(&val, 1, 1, fp) != 1)
+                    break;
+                short sample;
                 if (head.formattype == 6)
-                    Data[i] = alaw2linear(val);
+                    sample = alaw2linear(val);
                 else if (head.formattype == 7)
-                    Data[i] = ulaw2linear(val);
+                    sample = ulaw2linear(val);
                 else
-                    Data[i] = static_cast<short>((static_cast<int>(val) - 128) * 256);
-                if (2 == head.channelnum)
-                    fseek(fp, 1, SEEK_CUR);
+                    sample = static_cast<short>((static_cast<int>(val) - 128) * 256);
+                if (head.channelnum > 1) {
+                    if (skipRestOfFrame > 0 && fseek(fp, skipRestOfFrame, SEEK_CUR) != 0)
+                        break;
+                }
+                Data[n++] = sample;
             }
         }
 
         fclose(fp);
+
+        if (n == 0) {
+            delete[] Data;
+            Data = nullptr;
+            datanum = 0;
+            totalsample = 0;
+            printf("No samples decoded from WAV\n");
+            return false;
+        }
+
+        if (n < expectedFrames) {
+            short *trimmed = new short[n];
+            std::copy(Data, Data + n, trimmed);
+            delete[] Data;
+            Data = trimmed;
+            printf("Warning: incomplete WAV read (%u of %u frames)\n", n, expectedFrames);
+        }
+
+        datanum = totalsample = n;
+        uint32_t decodedBytes = 0;
+        if (!decodedBytesFit(n, head.adjustnum, &decodedBytes)) {
+            printf("Invalid WAV: decoded byte length overflow\n");
+            delete[] Data;
+            Data = nullptr;
+            datanum = totalsample = datalength = 0;
+            return false;
+        }
+        datalength = decodedBytes;
         return true;
     }
 
@@ -216,6 +310,15 @@ public:
 
     bool RawRead(const std::string& filename, const RawPcmFormat& fmt)
     {
+        if (Data) {
+            delete[] Data;
+            Data = nullptr;
+        }
+        datalength = 0;
+        totalsample = 0;
+        datanum = 0;
+        bitpersample = 0;
+
         if (fmt.bitsPerSample != 8 && fmt.bitsPerSample != 16) {
             printf("Unsupported bit depth: %d-bit.\n", fmt.bitsPerSample);
             return false;
@@ -243,7 +346,15 @@ public:
         std::memcpy(head.sign,     "RAW ", 4);
         std::memcpy(head.wavesign, "PCM ", 4);
         std::memcpy(head.fmtsign,  "fmt ", 4);
+        if (fmt.channels < 1) {
+            fclose(fp);
+            return false;
+        }
         uint16_t blockAlign = static_cast<uint16_t>((fmt.bitsPerSample / 8) * fmt.channels);
+        if (blockAlign == 0) {
+            fclose(fp);
+            return false;
+        }
         head.formattype  = 1; // PCM
         head.channelnum  = fmt.channels;
         head.samplerate  = fmt.sampleRate;
@@ -252,46 +363,119 @@ public:
         head.transferrate = fmt.sampleRate * blockAlign;
 
         datalength   = static_cast<uint32_t>(fileSize);
-        bitpersample = fmt.bitsPerSample / fmt.channels;
+        bitpersample = fmt.bitsPerSample;
         totalsample  = datalength / blockAlign;
-        datanum      = totalsample; // one decoded value per sample (first channel)
+        const uint32_t expectedFrames = totalsample;
 
-        if (Data) {
-            delete[] Data;
-            Data = nullptr;
+        const unsigned bytesPerChannel = fmt.bitsPerSample / 8;
+        const long skipRestOfFrame =
+            (fmt.channels > 1)
+                ? (long)blockAlign - (long)bytesPerChannel
+                : 0;
+        if (skipRestOfFrame < 0) {
+            datalength = 0;
+            totalsample = 0;
+            bitpersample = 0;
+            fclose(fp);
+            return false;
         }
-        Data = new short[datanum + 10];
+        if (fmt.channels > 1 && skipRestOfFrame == 0) {
+            printf("Invalid raw PCM: multi-channel but block align matches single channel\n");
+            datalength = 0;
+            totalsample = 0;
+            bitpersample = 0;
+            fclose(fp);
+            return false;
+        }
+
+        Data = new short[expectedFrames];
+        uint32_t n = 0;
 
         if (fmt.bitsPerSample == 8) {
-            for (uint32_t i = 0; !feof(fp) && i < datanum; i++) {
+            for (; n < expectedFrames; ) {
                 uint8_t val = 0;
-                if (fread(&val, 1, 1, fp) != 1) break;
+                if (fread(&val, 1, 1, fp) != 1)
+                    break;
+                short sample;
                 switch (fmt.encoding) {
                     case RawPcmFormat::Encoding::ALaw:
-                        Data[i] = alaw2linear(val); break;
+                        sample = alaw2linear(val); break;
                     case RawPcmFormat::Encoding::ULaw:
-                        Data[i] = ulaw2linear(val); break;
-                    default: // Linear unsigned 8-bit
-                        Data[i] = static_cast<short>((static_cast<int>(val) - 128) * 256);
+                        sample = ulaw2linear(val); break;
+                    default:
+                        sample = static_cast<short>((static_cast<int>(val) - 128) * 256);
                 }
-                if (fmt.channels == 2)
-                    fseek(fp, 1, SEEK_CUR);
+                if (fmt.channels > 1) {
+                    if (skipRestOfFrame > 0 && fseek(fp, skipRestOfFrame, SEEK_CUR) != 0)
+                        break;
+                }
+                Data[n++] = sample;
             }
         } else { // 16-bit
-            for (uint32_t i = 0; !feof(fp) && i < datanum; i++) {
-                uint8_t lo = 0, hi = 0;
-                if (fread(&lo, 1, 1, fp) != 1) break;
-                if (fread(&hi, 1, 1, fp) != 1) break;
-                if (fmt.littleEndian)
-                    Data[i] = static_cast<short>((hi << 8) | lo);
-                else
-                    Data[i] = static_cast<short>((lo << 8) | hi);
-                if (fmt.channels == 2)
-                    fseek(fp, 2, SEEK_CUR); // skip second channel
+            for (; n < expectedFrames; ) {
+                uint8_t byte0 = 0, byte1 = 0;
+                if (fread(&byte0, 1, 1, fp) != 1)
+                    break;
+                if (fread(&byte1, 1, 1, fp) != 1)
+                    break;
+                short sample = fmt.littleEndian
+                    ? static_cast<short>((static_cast<uint16_t>(byte1) << 8) | byte0)
+                    : static_cast<short>((static_cast<uint16_t>(byte0) << 8) | byte1);
+                if (fmt.channels > 1) {
+                    if (skipRestOfFrame > 0 && fseek(fp, skipRestOfFrame, SEEK_CUR) != 0)
+                        break;
+                }
+                Data[n++] = sample;
             }
         }
 
         fclose(fp);
+
+        if (n == 0) {
+            delete[] Data;
+            Data = nullptr;
+            datanum = 0;
+            totalsample = 0;
+            printf("No samples decoded from raw PCM\n");
+            return false;
+        }
+
+        if (n < expectedFrames) {
+            short *trimmed = new short[n];
+            std::copy(Data, Data + n, trimmed);
+            delete[] Data;
+            Data = trimmed;
+            printf("Warning: incomplete raw PCM read (%u of %u frames)\n", n, expectedFrames);
+        }
+
+        datanum = totalsample = n;
+        uint32_t decodedBytes = 0;
+        if (!decodedBytesFit(n, blockAlign, &decodedBytes)) {
+            printf("Invalid raw PCM: decoded byte length overflow\n");
+            delete[] Data;
+            Data = nullptr;
+            datanum = totalsample = datalength = 0;
+            return false;
+        }
+        datalength = decodedBytes;
+        return true;
+    }
+
+private:
+    /** LE 16-bit PCM: byte0 is low byte, byte1 is high byte. */
+    static short pcm16le(uint8_t byte0, uint8_t byte1)
+    {
+        return static_cast<short>((static_cast<uint16_t>(byte1) << 8) | byte0);
+    }
+
+    /** False if `frames * blockAlign` exceeds uint32_t (would truncate `datalength`). */
+    static bool decodedBytesFit(uint32_t frames, uint32_t blockAlign, uint32_t *outDecodedBytes)
+    {
+        const uint64_t product = static_cast<uint64_t>(frames) * static_cast<uint64_t>(blockAlign);
+        if (product > UINT32_MAX)
+            return false;
+        if (outDecodedBytes)
+            *outDecodedBytes = static_cast<uint32_t>(product);
         return true;
     }
 };

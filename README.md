@@ -24,6 +24,22 @@ cmake -B build
 cmake --build build
 ```
 
+### Tests (optional)
+
+Unit tests use Qt Test and are enabled when **`BUILD_TESTING`** is **ON** (CMake default). To force tests on in CI or scripted builds:
+
+```bash
+cmake -B build -DBUILD_TESTING=ON
+cmake --build build
+ctest --test-dir build
+```
+
+To skip building tests:
+
+```bash
+cmake -B build -DBUILD_TESTING=OFF
+```
+
 ## Usage
 
 Run the executable and press **Ctrl+O** to open an audio file.
@@ -41,6 +57,27 @@ Run the executable and press **Ctrl+O** to open an audio file.
 | 6 | A-law (G.711) |
 | 7 | μ-law (G.711) |
 
+## Future Development (TODO)
+
+This project is evolving from a waveform viewer into a professional **Audio Debugging & Analysis Tool**. The following features are planned to enhance signal diagnostics and data integrity analysis:
+
+### 1. Advanced Signal Visualization
+- [ ] **Spectrogram View**: Implement FFT (Fast Fourier Transform) to provide a time-frequency-amplitude visualization, essential for identifying specific frequency interference or noise patterns.
+- [ ] **Microscopic Zooming**: Enhance the zoom engine to allow navigation down to the single-sample level, enabling the detection of micro-glitches or transient digital errors.
+- [ ] **Multi-scale View**: Implement a dual-view system (Overview + Detail) to correlate long-term signal trends with instantaneous sample changes.
+
+### 2. Quantitative Data Analysis
+- [ ] **Statistical Dashboard**: Add a real-time data panel displaying critical metrics:
+    - **Peak & RMS Levels**: To monitor amplitude headroom.
+    - **Crest Factor**: To analyze the dynamic range and signal impulsiveness.
+    - **Zero-Crossing Rate**: To help identify high-frequency noise or signal instability.
+- [ ] **Clipping Detection**: Implement visual indicators (e.g., red highlighting) when samples exceed the maximum bit-depth threshold, identifying digital distortion.
+
+### 3. Debugging & Integrity Tools
+- [ ] **Format Validation Engine**: Add intelligence to detect misconfigured raw files (e.g., detecting if the chosen sample rate or endianness results in non-natural signal patterns).
+- [ ] **Endianness Toggle**: Provide a quick-switch mechanism for Little-endian vs. Big-endian viewing to facilitate rapid debugging of raw data parsing.
+- [ ] **Noise Floor Analysis**: Implement tools to measure and visualize the background noise level in silent segments.
+
 ## Waveform Rendering
 
 Each horizontal pixel represents a time window of samples. Three layers are drawn per column:
@@ -53,6 +90,8 @@ Each horizontal pixel represents a time window of samples. Three layers are draw
 
 ```
 wavefile/
+├── tests/
+│   └── test_wavefile.cpp   # Qt Test (WaveFile WAV/raw); run via `ctest`
 ├── include/
 │   ├── WaveFile.h          # WAV/raw PCM parser, G.711 decoders, data storage
 │   ├── widget.h            # Qt widget declaration
