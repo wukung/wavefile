@@ -62,9 +62,9 @@ Run the executable and press **Ctrl+O** to open an audio file.
 This project is evolving from a waveform viewer into a professional **Audio Debugging & Analysis Tool**. The following features are planned to enhance signal diagnostics and data integrity analysis:
 
 ### 1. Advanced Signal Visualization
-- [ ] **Spectrogram View**: Implement FFT (Fast Fourier Transform) to provide a time-frequency-amplitude visualization, essential for identifying specific frequency interference or noise patterns.
-- [ ] **Microscopic Zooming**: Enhance the zoom engine to allow navigation down to the single-sample level, enabling the detection of micro-glitches or transient digital errors.
-- [ ] **Multi-scale View**: Implement a dual-view system (Overview + Detail) to correlate long-term signal trends with instantaneous sample changes.
+- [ ] **Spectrogram View** *(deferred to next phase)*: Implement FFT (Fast Fourier Transform) to provide a time-frequency-amplitude visualization, essential for identifying specific frequency interference or noise patterns.
+- [x] **Microscopic Zooming**: Zooming supports single-sample inspection (`1 px = 1 sample`) with sample-level rendering at maximum zoom.
+- [x] **Multi-scale View**: Dual-view system (Overview + Detail) is implemented to correlate long-term signal trends with instantaneous sample changes.
 
 ### 2. Quantitative Data Analysis
 - [ ] **Statistical Dashboard**: Add a real-time data panel displaying critical metrics:
