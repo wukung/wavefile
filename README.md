@@ -17,6 +17,12 @@ A Qt6 desktop application that visualises audio files as a CoolEdit-style wavefo
 - Qt 6 (Core, Gui, Widgets)
 - A C++17-capable compiler
 
+## External Libraries
+
+- **Qt 6** (`Core`, `Gui`, `Widgets`): desktop UI, rendering, and event system.
+- **FFTW3** *(optional but recommended)*: accelerates spectrogram FFT computation.
+  - If FFTW3 is not available, spectrogram rendering falls back to a slower built-in DFT path.
+
 ## Build
 
 ```bash
@@ -43,6 +49,7 @@ cmake -B build -DBUILD_TESTING=OFF
 ## Usage
 
 Run the executable and press **Ctrl+O** to open an audio file.
+Press **W** to show waveform view and **S** to show spectrogram view.
 
 | File type | Behaviour |
 |-----------|-----------|
@@ -62,7 +69,7 @@ Run the executable and press **Ctrl+O** to open an audio file.
 This project is evolving from a waveform viewer into a professional **Audio Debugging & Analysis Tool**. The following features are planned to enhance signal diagnostics and data integrity analysis:
 
 ### 1. Advanced Signal Visualization
-- [ ] **Spectrogram View** *(deferred to next phase)*: Implement FFT (Fast Fourier Transform) to provide a time-frequency-amplitude visualization, essential for identifying specific frequency interference or noise patterns.
+- [x] **Spectrogram View**: Implemented an FFT-based spectrogram detail mode with time-frequency-amplitude visualization.
 - [x] **Microscopic Zooming**: Zooming supports single-sample inspection (`1 px = 1 sample`) with sample-level rendering at maximum zoom.
 - [x] **Multi-scale View**: Dual-view system (Overview + Detail) is implemented to correlate long-term signal trends with instantaneous sample changes.
 

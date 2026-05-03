@@ -13,6 +13,7 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOUIC_SEARCH_PATHS src)
 
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
+find_package(PkgConfig QUIET)
 
 add_executable(wavefile
     src/main.cpp
@@ -31,6 +32,23 @@ target_link_libraries(wavefile PRIVATE
     Qt6::Gui
     Qt6::Widgets
 )
+
+if(PkgConfig_FOUND)
+    pkg_check_modules(FFTW3 QUIET IMPORTED_TARGET fftw3)
+endif()
+
+if(TARGET PkgConfig::FFTW3)
+    target_link_libraries(wavefile PRIVATE PkgConfig::FFTW3)
+    target_compile_definitions(wavefile PRIVATE WAVEFILE_USE_FFTW=1)
+else()
+    find_library(FFTW3_LIB fftw3)
+    if(FFTW3_LIB)
+        target_link_libraries(wavefile PRIVATE ${FFTW3_LIB})
+        target_compile_definitions(wavefile PRIVATE WAVEFILE_USE_FFTW=1)
+    else()
+        message(WARNING "FFTW3 not found; spectrogram falls back to slower DFT implementation.")
+    endif()
+endif()
 
 if(BUILD_TESTING)
     add_subdirectory(tests)

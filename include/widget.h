@@ -29,9 +29,15 @@ private slots:
     void openFile();
 
 private:
+    enum class DetailViewMode {
+        Waveform,
+        Spectrogram
+    };
+
     Ui::Widget *ui;
 
     void DrawWaveform(QPainter &p, int W, int H, double samplesPerPixel, double offsetInSamples, int yOffset);
+    void DrawSpectrogram(QPainter &p, int W, int H, double samplesPerPixel, double offsetInSamples, int yOffset);
 
     // Necessary variables for wave form
     WaveFile m_Wavefile;
@@ -43,6 +49,7 @@ private:
     QPoint m_LastMousePos;
     bool m_IsPanning;
     int m_OverviewHeight;
+    DetailViewMode m_DetailViewMode;
 
     void DrawOverview(QPainter &p, int W, int H);
 };

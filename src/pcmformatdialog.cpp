@@ -15,7 +15,7 @@ PcmFormatDialog::PcmFormatDialog(QWidget *parent)
     m_sampleRateBox = new QComboBox(this);
     for (int rate : {8000, 11025, 16000, 22050, 44100, 48000, 96000})
         m_sampleRateBox->addItem(QString::number(rate) + " Hz", rate);
-    m_sampleRateBox->setCurrentIndex(4); // 44100 as default
+    m_sampleRateBox->setCurrentIndex(0); // 8000 Hz as default
 
     m_bitDepthBox = new QComboBox(this);
     m_bitDepthBox->addItem("8-bit",  8);
