@@ -18,9 +18,17 @@ find_package(PkgConfig QUIET)
 add_executable(wavefile
     src/main.cpp
     src/widget.cpp
+    src/viewstate.cpp
+    src/waveformrenderer.cpp
+    src/spectrogramrenderer.cpp
+    src/audiofileloader.cpp
     src/widget.ui
     src/pcmformatdialog.cpp
     include/widget.h
+    include/viewstate.h
+    include/waveformrenderer.h
+    include/spectrogramrenderer.h
+    include/audiofileloader.h
     include/WaveFile.h
     include/pcmformatdialog.h
 )

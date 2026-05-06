@@ -6,6 +6,7 @@
 #include <QMouseEvent>
 
 #include "WaveFile.h"
+#include "viewstate.h"
 
 namespace Ui {
 class Widget;
@@ -36,22 +37,16 @@ private:
 
     Ui::Widget *ui;
 
-    void DrawWaveform(QPainter &p, int W, int H, double samplesPerPixel, double offsetInSamples, int yOffset);
-    void DrawSpectrogram(QPainter &p, int W, int H, double samplesPerPixel, double offsetInSamples, int yOffset);
-
     // Necessary variables for wave form
     WaveFile m_Wavefile;
     bool m_DrawWave;
     QString m_Filename;
-    double m_SamplesPerPixel;
-    double m_OffsetInSamples;
+    ViewState m_ViewState;
 
     QPoint m_LastMousePos;
     bool m_IsPanning;
     int m_OverviewHeight;
     DetailViewMode m_DetailViewMode;
-
-    void DrawOverview(QPainter &p, int W, int H);
 };
 
 #endif // WIDGET_H
