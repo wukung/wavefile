@@ -109,6 +109,14 @@ private slots:
     void rawPcmMono8_alawOneSample();
     void rawPcmMono8_ulawOneSample();
     void rawPcmMono16_rejectIncompleteFirstSample();
+    void wavRejectOversizedDataChunk();
+    void wavReject16bitALaw();
+    void wavReject16bitMuLaw();
+    void wavRejectBadMagic();
+    void wavRejectFmtSizeTooSmall();
+    void g711AlawAnchors();
+    void g711UlawSelfConsistent();
+    void rawPcmFormatTagReflectsEncoding();
 };
 
 void TestWaveFile::wavMono16_fourSamples()
@@ -463,6 +471,178 @@ void TestWaveFile::rawPcmMono16_rejectIncompleteFirstSample()
     QVERIFY(!wf.RawRead(path.toStdString(), fmt));
     QCOMPARE(static_cast<int>(wf.datanum), 0);
     QVERIFY(wf.Data == nullptr);
+}
+
+void TestWaveFile::wavRejectOversizedDataChunk()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    // Declared data chunk implies more than kMaxFrames frames, but the file
+    // itself stays tiny — rejection must happen before any huge allocation.
+    const uint32_t frames = WaveFile::kMaxFrames + 16;
+    const uint32_t declared = frames * 2; // mono 16-bit: blockAlign = 2
+    QByteArray payload;
+    payload += int16Le(1);
+
+    QString path;
+    writeTemp(dir, QStringLiteral("huge.wav"),
+              makePcmWav(1, 16, 8000, payload, declared), &path);
+
+    WaveFile wf;
+    QVERIFY(!wf.WavRead(path.toStdString()));
+    QVERIFY(wf.Data == nullptr);
+    QCOMPARE(static_cast<int>(wf.datalength), 0);
+    QCOMPARE(static_cast<int>(wf.totalsample), 0);
+    QCOMPARE(static_cast<int>(wf.bitpersample), 0);
+}
+
+void TestWaveFile::wavReject16bitALaw()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    QByteArray payload;
+    payload += int16Le(100);
+    payload += int16Le(200);
+
+    QString path;
+    writeTemp(dir, QStringLiteral("a16.wav"), makeWav(6, 1, 16, 8000, payload), &path);
+
+    WaveFile wf;
+    QVERIFY(!wf.WavRead(path.toStdString()));
+    QVERIFY(wf.Data == nullptr);
+}
+
+void TestWaveFile::wavReject16bitMuLaw()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    QByteArray payload;
+    payload += int16Le(100);
+    payload += int16Le(200);
+
+    QString path;
+    writeTemp(dir, QStringLiteral("u16.wav"), makeWav(7, 1, 16, 8000, payload), &path);
+
+    WaveFile wf;
+    QVERIFY(!wf.WavRead(path.toStdString()));
+    QVERIFY(wf.Data == nullptr);
+}
+
+void TestWaveFile::wavRejectBadMagic()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    QByteArray payload;
+    payload += int16Le(10);
+
+    QByteArray wav = makePcmWav(1, 16, 8000, payload);
+    wav[3] = static_cast<char>('X'); // "RIFF" -> "RIFX"
+
+    QString path;
+    writeTemp(dir, QStringLiteral("magic.wav"), wav, &path);
+
+    WaveFile wf;
+    QVERIFY(!wf.WavRead(path.toStdString()));
+    QVERIFY(wf.Data == nullptr);
+}
+
+void TestWaveFile::wavRejectFmtSizeTooSmall()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    QByteArray payload;
+    payload += int16Le(10);
+
+    QByteArray wav = makePcmWav(1, 16, 8000, payload);
+    // Patch the fmt-chunk size field (little-endian uint32 at offset 16) to 8.
+    QVERIFY(wav.size() >= 20);
+    wav[16] = static_cast<char>(8);
+    wav[17] = static_cast<char>(0);
+    wav[18] = static_cast<char>(0);
+    wav[19] = static_cast<char>(0);
+
+    QString path;
+    writeTemp(dir, QStringLiteral("fmtsize.wav"), wav, &path);
+
+    WaveFile wf;
+    QVERIFY(!wf.WavRead(path.toStdString()));
+    QVERIFY(wf.Data == nullptr);
+}
+
+void TestWaveFile::g711AlawAnchors()
+{
+    QCOMPARE(WaveFile::alaw2linear(0xD5), static_cast<short>(8));
+    QCOMPARE(WaveFile::alaw2linear(0x55), static_cast<short>(-8));
+}
+
+void TestWaveFile::g711UlawSelfConsistent()
+{
+    // Self-consistency only: file decode must match the direct decoder call.
+    // Published-value agreement is tracked separately (decoder-bias gap).
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    for (uint8_t enc : {uint8_t(0x00), uint8_t(0xFF)}) {
+        QByteArray payload;
+        payload.append(static_cast<char>(enc));
+        QString path;
+        writeTemp(dir, QStringLiteral("u_%1.wav").arg(static_cast<int>(enc)),
+                  makeWav(7, 1, 8, 8000, payload), &path);
+        WaveFile wf;
+        QVERIFY(wf.WavRead(path.toStdString()));
+        QCOMPARE(wf.Data[0], WaveFile::ulaw2linear(enc));
+    }
+}
+
+void TestWaveFile::rawPcmFormatTagReflectsEncoding()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    QByteArray raw;
+    raw.append(static_cast<char>(0xD5));
+
+    QString path;
+    writeTemp(dir, QStringLiteral("t.raw"), raw, &path);
+
+    {
+        WaveFile::RawPcmFormat fmt;
+        fmt.sampleRate = 8000;
+        fmt.bitsPerSample = 8;
+        fmt.channels = 1;
+        fmt.littleEndian = true;
+        fmt.encoding = WaveFile::RawPcmFormat::Encoding::Linear;
+        WaveFile wf;
+        QVERIFY(wf.RawRead(path.toStdString(), fmt));
+        QCOMPARE(wf.head.formattype, static_cast<uint16_t>(1));
+    }
+    {
+        WaveFile::RawPcmFormat fmt;
+        fmt.sampleRate = 8000;
+        fmt.bitsPerSample = 8;
+        fmt.channels = 1;
+        fmt.littleEndian = true;
+        fmt.encoding = WaveFile::RawPcmFormat::Encoding::ALaw;
+        WaveFile wf;
+        QVERIFY(wf.RawRead(path.toStdString(), fmt));
+        QCOMPARE(wf.head.formattype, static_cast<uint16_t>(6));
+    }
+    {
+        WaveFile::RawPcmFormat fmt;
+        fmt.sampleRate = 8000;
+        fmt.bitsPerSample = 8;
+        fmt.channels = 1;
+        fmt.littleEndian = true;
+        fmt.encoding = WaveFile::RawPcmFormat::Encoding::ULaw;
+        WaveFile wf;
+        QVERIFY(wf.RawRead(path.toStdString(), fmt));
+        QCOMPARE(wf.head.formattype, static_cast<uint16_t>(7));
+    }
 }
 
 QTEST_MAIN(TestWaveFile)

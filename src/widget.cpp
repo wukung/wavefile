@@ -27,8 +27,8 @@ Widget::~Widget()
 
 void Widget::openFile()
 {
-    m_DrawWave = AudioFileLoader::openAudioFile(this, m_Wavefile, m_Filename);
-    if (m_DrawWave) {
+    if (AudioFileLoader::openAudioFile(this, m_Wavefile, m_Filename)) {
+        m_DrawWave = true;
         m_Wavefile.WavInfo();
         m_ViewState.resetForData(static_cast<int>(m_Wavefile.datanum), width());
     }

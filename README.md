@@ -98,15 +98,25 @@ Each horizontal pixel represents a time window of samples. Three layers are draw
 ```
 wavefile/
 ├── tests/
-│   └── test_wavefile.cpp   # Qt Test (WaveFile WAV/raw); run via `ctest`
+│   ├── CMakeLists.txt      # Test build targets; run via `ctest`
+│   ├── test_wavefile.cpp   # Qt Test (WaveFile WAV/raw)
+│   └── test_viewstate.cpp  # Qt Test (ViewState zoom/pan/clamp)
 ├── include/
-│   ├── WaveFile.h          # WAV/raw PCM parser, G.711 decoders, data storage
-│   ├── widget.h            # Qt widget declaration
-│   └── pcmformatdialog.h   # Raw PCM format dialog declaration
+│   ├── WaveFile.h            # WAV/raw PCM parser, G.711 decoders, data storage
+│   ├── viewstate.h           # Qt-free zoom/pan state (samples-per-pixel + offset)
+│   ├── waveformrenderer.h    # Waveform overview/detail rendering declarations
+│   ├── spectrogramrenderer.h # Spectrogram detail rendering declarations
+│   ├── audiofileloader.h     # File-open dialog + WAV/raw loading declarations
+│   ├── widget.h              # Main widget declaration (view state, interaction)
+│   └── pcmformatdialog.h     # Raw PCM format dialog declaration
 ├── src/
-│   ├── main.cpp            # Application entry point
-│   ├── widget.cpp          # Waveform rendering and user interaction
-│   ├── widget.ui           # Qt Designer UI file
-│   └── pcmformatdialog.cpp # Raw PCM format dialog implementation
+│   ├── main.cpp              # Application entry point
+│   ├── viewstate.cpp         # Zoom/pan/clamp implementation (Qt-free)
+│   ├── waveformrenderer.cpp  # Per-pixel min/max + RMS waveform rendering
+│   ├── spectrogramrenderer.cpp # FFT spectrogram rendering (FFTW3 or DFT fallback)
+│   ├── audiofileloader.cpp   # File-open dialog + WAV/raw loading implementation
+│   ├── widget.cpp            # Main widget: paint, zoom, pan, view switching
+│   ├── widget.ui             # Qt Designer UI file
+│   └── pcmformatdialog.cpp   # Raw PCM format dialog implementation
 └── CMakeLists.txt
 ```

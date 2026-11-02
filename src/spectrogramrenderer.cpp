@@ -64,6 +64,29 @@ void drawDetail(QPainter &p, const WaveFile &waveFile, const ViewState &viewStat
     const int halfBins = fftSize / 2 + 1;
     constexpr double kPi = 3.14159265358979323846;
 
+    // Finished-image cache: a repaint with an identical key reuses the stored
+    // QImage and skips the Hann window, FFT setup, per-column FFT, and
+    // per-pixel mapping entirely. A Data-pointer change (file reload allocates
+    // a new buffer) invalidates the cache via the key.
+    // Single-GUI-thread assumption: drawDetail runs on the GUI thread only,
+    // so these function-static cache entries need no locking.
+    static bool cacheValid = false;
+    static const short *cachedData = nullptr;
+    static int cachedDatanum = 0;
+    static double cachedSamplesPerPixel = 0.0;
+    static double cachedOffsetInSamples = 0.0;
+    static int cachedW = 0;
+    static int cachedH = 0;
+    static int cachedYOffset = 0;
+    static QImage cachedImage;
+
+    if (cacheValid && cachedData == waveFile.Data && cachedDatanum == datanum
+        && cachedSamplesPerPixel == samplesPerPixel && cachedOffsetInSamples == offsetInSamples
+        && cachedW == w && cachedH == h && cachedYOffset == yOffset) {
+        p.drawImage(0, yOffset, cachedImage);
+        return;
+    }
+
     QImage image(w, h, QImage::Format_RGB32);
     image.fill(QColor(0, 0, 0));
 
@@ -73,14 +96,25 @@ void drawDetail(QPainter &p, const WaveFile &waveFile, const ViewState &viewStat
     }
 
 #ifdef WAVEFILE_USE_FFTW
-    std::vector<double> frame(static_cast<size_t>(fftSize), 0.0);
-    fftw_complex *spectrum = reinterpret_cast<fftw_complex *>(
-        fftw_malloc(sizeof(fftw_complex) * static_cast<size_t>(halfBins)));
-    if (!spectrum) return;
-    fftw_plan plan = fftw_plan_dft_r2c_1d(fftSize, frame.data(), spectrum, FFTW_ESTIMATE);
-    if (!plan) {
-        fftw_free(spectrum);
-        return;
+    // Single-GUI-thread assumption: FFTW plan creation/execution calls are
+    // not thread-safe, so this plan must only be created and used here on the
+    // GUI thread. fftSize is const 512, so one process-lifetime plan serves
+    // every call instead of building/destroying a plan per paint.
+    static std::vector<double> frame(static_cast<size_t>(fftSize), 0.0);
+    static fftw_complex *spectrum = nullptr;
+    static fftw_plan plan = nullptr;
+    static bool fftInitialized = false;
+    if (!fftInitialized) {
+        spectrum = reinterpret_cast<fftw_complex *>(
+            fftw_malloc(sizeof(fftw_complex) * static_cast<size_t>(halfBins)));
+        if (!spectrum) return;
+        plan = fftw_plan_dft_r2c_1d(fftSize, frame.data(), spectrum, FFTW_ESTIMATE);
+        if (!plan) {
+            fftw_free(spectrum);
+            spectrum = nullptr;
+            return;
+        }
+        fftInitialized = true;
     }
 
     std::vector<double> magnitudes(static_cast<size_t>(halfBins), 0.0);
@@ -109,8 +143,8 @@ void drawDetail(QPainter &p, const WaveFile &waveFile, const ViewState &viewStat
             image.setPixelColor(x, y, spectrogramColorMap(normalized));
         }
     }
-    fftw_destroy_plan(plan);
-    fftw_free(spectrum);
+    // NOTE: plan/spectrum/frame are function-static now: reused every miss,
+    // never destroyed per paint.
 #else
     std::vector<double> frame(static_cast<size_t>(fftSize), 0.0);
     for (int x = 0; x < w; ++x) {
@@ -140,6 +174,16 @@ void drawDetail(QPainter &p, const WaveFile &waveFile, const ViewState &viewStat
         }
     }
 #endif
+
+    cachedData = waveFile.Data;
+    cachedDatanum = datanum;
+    cachedSamplesPerPixel = samplesPerPixel;
+    cachedOffsetInSamples = offsetInSamples;
+    cachedW = w;
+    cachedH = h;
+    cachedYOffset = yOffset;
+    cachedImage = image;
+    cacheValid = true;
 
     p.drawImage(0, yOffset, image);
 }

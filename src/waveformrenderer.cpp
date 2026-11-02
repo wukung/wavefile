@@ -9,9 +9,19 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 #include <vector>
 
 namespace WaveformRenderer {
+
+std::pair<int, int> columnRange(int x, double samplesPerPixel, double offsetInSamples, int datanum)
+{
+    int startIdx = static_cast<int>(x * samplesPerPixel + offsetInSamples);
+    int endIdx = static_cast<int>((x + 1) * samplesPerPixel + offsetInSamples);
+    if (endIdx <= startIdx) endIdx = startIdx + 1;
+    endIdx = std::min(endIdx, datanum);
+    return {startIdx, endIdx};
+}
 
 void drawOverview(QPainter &p, const WaveFile &waveFile, const ViewState &viewState, int w, int h)
 {
@@ -78,85 +88,47 @@ void drawDetail(QPainter &p, const WaveFile &waveFile, const ViewState &viewStat
     };
 
     if (samplesPerPixel <= 8.0) {
-        std::vector<QPointF> points;
-        points.reserve(static_cast<size_t>(w));
-        for (int x = 0; x < w; x++) {
-            const double samplePos = offsetInSamples + (x * samplesPerPixel);
-            if (samplePos < 0.0 || samplePos >= datanum) continue;
-            const int idx0 = std::clamp(static_cast<int>(std::floor(samplePos)), 0, datanum - 1);
-            const int idx1 = std::min(idx0 + 1, datanum - 1);
-            const double frac = samplePos - idx0;
-            const double v = (1.0 - frac) * waveFile.Data[idx0] + frac * waveFile.Data[idx1];
-            points.emplace_back(x, scaleY(static_cast<int>(std::lround(v))));
+        const double pixelsPerSample = 1.0 / samplesPerPixel;
+        const int firstSample = std::max(0, static_cast<int>(std::floor(offsetInSamples)));
+        const int lastSample = std::min(datanum - 1, static_cast<int>(std::ceil(offsetInSamples + w * samplesPerPixel)));
+        std::vector<QPointF> samplePoints;
+        if (lastSample >= firstSample)
+            samplePoints.reserve(static_cast<size_t>(lastSample - firstSample + 1));
+
+        for (int s = firstSample; s <= lastSample; ++s) {
+            const double x = (s - offsetInSamples) / samplesPerPixel;
+            if (x < 0.0 || x > w) continue;
+            samplePoints.emplace_back(x, scaleY(waveFile.Data[s]));
         }
-        if (points.empty()) return;
+        if (samplePoints.empty()) return;
 
         p.save();
         p.setRenderHint(QPainter::Antialiasing, true);
-        p.setPen(QPen(rmsColor, 1.6));
 
-        QPainterPath smoothPath;
-        smoothPath.moveTo(points[0]);
-        if (points.size() == 1) {
-            p.drawPoint(points[0]);
+        QPainterPath tracePath;
+        tracePath.moveTo(samplePoints[0]);
+        if (samplePoints.size() == 1) {
+            p.setPen(QPen(rmsColor, 1.6));
+            p.drawPoint(samplePoints[0]);
         } else {
-            for (size_t i = 0; i + 1 < points.size(); ++i) {
-                const QPointF &p0 = (i == 0) ? points[i] : points[i - 1];
-                const QPointF &p1 = points[i];
-                const QPointF &p2 = points[i + 1];
-                const QPointF &p3 = (i + 2 < points.size()) ? points[i + 2] : points[i + 1];
-                const QPointF c1 = p1 + (p2 - p0) / 6.0;
-                const QPointF c2 = p2 - (p3 - p1) / 6.0;
-                smoothPath.cubicTo(c1, c2, p2);
-            }
-            p.drawPath(smoothPath);
+            for (size_t i = 1; i < samplePoints.size(); ++i)
+                tracePath.lineTo(samplePoints[i]);
+            p.setPen(QPen(rmsColor, 1.6));
+            p.drawPath(tracePath);
         }
 
-        const double pixelsPerSample = 1.0 / samplesPerPixel;
         if (pixelsPerSample >= 4.0) {
-            const int firstSample = std::max(0, static_cast<int>(std::floor(offsetInSamples)));
-            const int lastSample = std::min(datanum - 1, static_cast<int>(std::ceil(offsetInSamples + w * samplesPerPixel)));
-            std::vector<QPointF> samplePoints;
-            samplePoints.reserve(static_cast<size_t>(std::max(0, lastSample - firstSample + 1)));
-
-            for (int s = firstSample; s <= lastSample; ++s) {
-                const double x = (s - offsetInSamples) / samplesPerPixel;
-                if (x < 0.0 || x > w) continue;
-                samplePoints.emplace_back(x, scaleY(waveFile.Data[s]));
-            }
-
-            if (!samplePoints.empty()) {
-                QPainterPath sampleSmoothPath;
-                sampleSmoothPath.moveTo(samplePoints[0]);
-                if (samplePoints.size() > 1) {
-                    for (size_t i = 0; i + 1 < samplePoints.size(); ++i) {
-                        const QPointF &p0 = (i == 0) ? samplePoints[i] : samplePoints[i - 1];
-                        const QPointF &p1 = samplePoints[i];
-                        const QPointF &p2 = samplePoints[i + 1];
-                        const QPointF &p3 = (i + 2 < samplePoints.size()) ? samplePoints[i + 2] : samplePoints[i + 1];
-                        const QPointF c1 = p1 + (p2 - p0) / 6.0;
-                        const QPointF c2 = p2 - (p3 - p1) / 6.0;
-                        sampleSmoothPath.cubicTo(c1, c2, p2);
-                    }
-                }
-
-                p.setPen(QPen(QColor(0xA2, 0xFF, 0xD4), 1.2));
-                p.drawPath(sampleSmoothPath);
-                p.setPen(QPen(QColor(0xC8, 0xFF, 0xE8), 0.9));
-                p.setBrush(QColor(0xD5, 0xFF, 0xEA));
-                const double radius = (pixelsPerSample >= 10.0) ? 2.3 : 1.8;
-                for (const QPointF &pt : samplePoints) p.drawEllipse(pt, radius, radius);
-            }
+            p.setPen(QPen(QColor(0xC8, 0xFF, 0xE8), 0.9));
+            p.setBrush(QColor(0xD5, 0xFF, 0xEA));
+            const double radius = (pixelsPerSample >= 10.0) ? 2.3 : 1.8;
+            for (const QPointF &pt : samplePoints) p.drawEllipse(pt, radius, radius);
         }
         p.restore();
         return;
     }
 
     for (int x = 0; x < w; x++) {
-        int startIdx = static_cast<int>(x * samplesPerPixel) + static_cast<int>(offsetInSamples);
-        int endIdx   = static_cast<int>((x + 1) * samplesPerPixel) + static_cast<int>(offsetInSamples);
-        if (endIdx <= startIdx) endIdx = startIdx + 1;
-        endIdx = std::min(endIdx, datanum);
+        const auto [startIdx, endIdx] = columnRange(x, samplesPerPixel, offsetInSamples, datanum);
         if (startIdx >= datanum) break;
 
         short minVal = waveFile.Data[startIdx];

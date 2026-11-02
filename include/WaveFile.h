@@ -12,6 +12,8 @@
 class WaveFile
 {
 public:
+    /** Maximum decodable frames per read; guards file-controlled `new short[expectedFrames]`. */
+    static constexpr uint32_t kMaxFrames = 1u << 28;
 #pragma pack(push, 1)
     struct wavehead {
         char sign[4];                   // "RIFF" sign
@@ -115,6 +117,16 @@ public:
             return false;
         }
 
+        // Validate magic and minimal fmt chunk (fmt body is 16 bytes for PCM).
+        if (std::memcmp(head.sign, "RIFF", 4) != 0 ||
+            std::memcmp(head.wavesign, "WAVE", 4) != 0 ||
+            std::memcmp(head.fmtsign, "fmt ", 4) != 0 ||
+            head.unused < 16 || head.channelnum < 1) {
+            printf("Invalid WAV header\n");
+            fclose(fp);
+            return false;
+        }
+
         // Skip any extension bytes in the fmt chunk (size is in head.unused)
         if (head.unused > 16) {
             if (fseek(fp, (long)(head.unused - 16), SEEK_CUR) != 0) {
@@ -156,9 +168,29 @@ public:
         bitpersample = head.databitnum;
         const uint32_t expectedFrames = totalsample;
 
+        if (expectedFrames > kMaxFrames) {
+            printf("Invalid WAV: declared frame count %u exceeds limit %u\n",
+                   expectedFrames, kMaxFrames);
+            datalength = 0;
+            totalsample = 0;
+            bitpersample = 0;
+            Data = nullptr;
+            fclose(fp);
+            return false;
+        }
+
         if (head.databitnum != 8 && head.databitnum != 16) {
             printf("Unsupported bit depth: %d-bit. Only 8-bit and 16-bit PCM are supported.\n",
                    head.databitnum);
+            datalength = 0;
+            totalsample = 0;
+            bitpersample = 0;
+            fclose(fp);
+            return false;
+        }
+        // 16-bit G.711 (A-law tag 6 / mu-law tag 7) has no defined 16-bit encoding here.
+        if (head.databitnum == 16 && head.formattype != 1) {
+            printf("Unsupported WAV: 16-bit with non-PCM format tag %d\n", head.formattype);
             datalength = 0;
             totalsample = 0;
             bitpersample = 0;
@@ -355,7 +387,8 @@ public:
             fclose(fp);
             return false;
         }
-        head.formattype  = 1; // PCM
+        head.formattype  = (fmt.encoding == RawPcmFormat::Encoding::ALaw) ? 6 :
+                           (fmt.encoding == RawPcmFormat::Encoding::ULaw) ? 7 : 1;
         head.channelnum  = fmt.channels;
         head.samplerate  = fmt.sampleRate;
         head.databitnum  = fmt.bitsPerSample;
@@ -366,6 +399,17 @@ public:
         bitpersample = fmt.bitsPerSample;
         totalsample  = datalength / blockAlign;
         const uint32_t expectedFrames = totalsample;
+
+        if (expectedFrames > kMaxFrames) {
+            printf("Invalid raw PCM: frame count %u exceeds limit %u\n",
+                   expectedFrames, kMaxFrames);
+            datalength = 0;
+            totalsample = 0;
+            bitpersample = 0;
+            Data = nullptr;
+            fclose(fp);
+            return false;
+        }
 
         const unsigned bytesPerChannel = fmt.bitsPerSample / 8;
         const long skipRestOfFrame =

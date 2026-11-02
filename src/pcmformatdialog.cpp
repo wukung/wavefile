@@ -62,8 +62,12 @@ void PcmFormatDialog::onBitDepthChanged(int index)
 {
     bool is8bit = (m_bitDepthBox->itemData(index).toInt() == 8);
     m_encodingBox->setEnabled(is8bit);
-    if (!is8bit)
-        m_encodingBox->setCurrentIndex(0); // reset to Linear
+    if (!is8bit) {
+        // reset to Linear (look up by data, don't assume its index)
+        const int linearIdx = m_encodingBox->findData(static_cast<int>(Encoding::Linear));
+        if (linearIdx >= 0)
+            m_encodingBox->setCurrentIndex(linearIdx);
+    }
 }
 
 WaveFile::RawPcmFormat PcmFormatDialog::format() const
@@ -74,5 +78,7 @@ WaveFile::RawPcmFormat PcmFormatDialog::format() const
     fmt.channels      = static_cast<uint16_t>(m_channelsBox->currentData().toInt());
     fmt.littleEndian  = m_endianBox->currentData().toBool();
     fmt.encoding      = static_cast<Encoding>(m_encodingBox->currentData().toInt());
+    if (fmt.bitsPerSample == 16)
+        fmt.encoding = Encoding::Linear;
     return fmt;
 }

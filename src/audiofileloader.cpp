@@ -19,12 +19,17 @@ bool openAudioFile(QWidget *parent, WaveFile &waveFile, QString &filenameOut)
 
     if (filename.isEmpty()) return false;
 
-    filenameOut = filename;
-    if (waveFile.WavRead(filenameOut.toStdString())) return true;
+    if (waveFile.WavRead(filename.toStdString())) {
+        filenameOut = filename;
+        return true;
+    }
 
     PcmFormatDialog dlg(parent);
     if (dlg.exec() == QDialog::Accepted) {
-        return waveFile.RawRead(filenameOut.toStdString(), dlg.format());
+        if (waveFile.RawRead(filename.toStdString(), dlg.format())) {
+            filenameOut = filename;
+            return true;
+        }
     }
     return false;
 }
